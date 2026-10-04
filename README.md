@@ -212,7 +212,9 @@ must still ask for `{"choice": ..., "confidence": ..., "reason": ...}` JSON, bec
 
 ## Rules
 
-1. Each juror picks one allowed option and gives a one-line reason.
+1. Each juror picks one allowed option and gives a one-line reason. It also reports a confidence,
+   which is recorded in `vote.confidence` but not used to decide the verdict, because models
+   tend to report confidence poorly.
 2. The verdict is the option with the most votes.
 3. `needs_review` is true unless every juror returned the same valid choice.
 4. A tie is a hung jury: no verdict, review needed.
