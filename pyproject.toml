@@ -5,7 +5,27 @@ description = "Ask several models instead of one. Ship when they agree, send to 
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+authors = [{ name = "YasserManss" }]
+keywords = ["llm", "evaluation", "llm-as-a-judge", "ensemble", "human-in-the-loop", "voting"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = ["openai>=1.0"]
+
+[project.urls]
+Homepage = "https://github.com/YasserManss/modeljury"
+Repository = "https://github.com/YasserManss/modeljury"
+Issues = "https://github.com/YasserManss/modeljury/issues"
 
 [project.optional-dependencies]
 claude = [

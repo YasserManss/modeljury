@@ -4,12 +4,12 @@ Ask several models instead of one. Ship when they agree, send to a human when th
 
 ## Getting started
 
-Install from GitHub. It isn't on PyPI yet. Python 3.10 or newer.
+Python 3.10 or newer.
 
 ```sh
-pip install git+https://github.com/YasserManss/modeljury
+pip install modeljury
 # with Claude support
-pip install "modeljury[claude] @ git+https://github.com/YasserManss/modeljury"
+pip install "modeljury[claude]"
 ```
 
 Point it at any OpenAI-compatible endpoint (OpenAI, Ollama, vLLM, OpenRouter, ...) and
@@ -240,4 +240,4 @@ uv run pytest
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/YasserManss/modeljury/blob/main/LICENSE).
