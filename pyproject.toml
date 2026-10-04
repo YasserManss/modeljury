@@ -1,6 +1,6 @@
 [project]
 name = "modeljury"
-version = "0.1.0"
+version = "0.2.0"
 description = "Ask several models instead of one. Ship when they agree, send to a human when they don't."
 readme = "README.md"
 requires-python = ">=3.10"
