@@ -2,6 +2,40 @@
 
 Ask several models instead of one. Ship when they agree, send to a human when they don't.
 
+## Getting started
+
+Install from GitHub. It isn't on PyPI yet. Python 3.10 or newer.
+
+```sh
+pip install git+https://github.com/YasserManss/modeljury
+# with Claude support
+pip install "modeljury[claude] @ git+https://github.com/YasserManss/modeljury"
+```
+
+Point it at any OpenAI-compatible endpoint (OpenAI, Ollama, vLLM, OpenRouter, ...) and
+convene a panel. This one uses three models served by a local Ollama:
+
+```python
+from modeljury import Juror, convene
+
+local = "http://localhost:11434/v1"
+result = convene(
+    question="Is this review spam?",
+    evidence="'Best product ever!!! Visit cheap-deals.example for 90% off!!!'",
+    options=["spam", "not spam"],
+    jurors=[Juror(m, base_url=local) for m in ["llama3.1", "qwen3", "mistral"]],
+)
+
+print(result.verdict, result.needs_review)
+for juror, choice, reason in result.dissent:
+    print(f"{juror} disagreed: {choice}, {reason}")
+```
+
+For hosted models, set `OPENAI_API_KEY` (and `OPENAI_BASE_URL` for non-OpenAI providers) or
+pass `api_key=` and `base_url=` to each `Juror`. For Claude, set `ANTHROPIC_API_KEY`.
+
+## Usage
+
 ```python
 from modeljury import Juror, convene
 
