@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .jury import Juror
+from .jury import Juror, _http_client
 
 
 @dataclass
@@ -20,10 +20,13 @@ class Claude(Juror):
 
     def ask(self, prompt: str, timeout: float, params: dict[str, Any]) -> str:
         if self.client is None:
-            from anthropic import Anthropic
+            import anthropic
 
             kwargs = {"api_key": self.api_key, "base_url": self.base_url}
-            self.client = Anthropic(**{k: v for k, v in kwargs.items() if v is not None})
+            self.client = anthropic.Anthropic(
+                **{k: v for k, v in kwargs.items() if v is not None},
+                **_http_client(anthropic, self.verify),
+            )
         merged = {"max_tokens": 16000, "timeout": timeout, **self.params}
         resp = self.client.messages.create(
             **{k: v for k, v in merged.items() if v is not None},

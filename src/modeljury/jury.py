@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import ssl
 import warnings
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -33,6 +34,8 @@ class Juror:
     max_tokens, reasoning_effort, extra_body, ...) and override the panel's.
     Set a param to None to leave it out, e.g. {"temperature": None} for
     reasoning models that reject temperature.
+    verify controls TLS certificate checks: True (default), False to skip them,
+    or a path to a CA bundle for self-signed or internal certificates.
     """
 
     model: str
@@ -40,6 +43,7 @@ class Juror:
     api_key: str | None = None
     name: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
+    verify: bool | str = True
     client: Any = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -47,11 +51,12 @@ class Juror:
 
     def ask(self, prompt: str, timeout: float, params: dict[str, Any]) -> str:
         if self.client is None:
-            from openai import OpenAI
+            import openai
 
-            self.client = OpenAI(
+            self.client = openai.OpenAI(
                 base_url=self.base_url or os.environ.get("OPENAI_BASE_URL"),
                 api_key=self.api_key or os.environ.get("OPENAI_API_KEY", "none"),
+                **_http_client(openai, self.verify),
             )
         merged = {"temperature": 0, "timeout": timeout, **params, **self.params}
         resp = self.client.chat.completions.create(
@@ -60,6 +65,16 @@ class Juror:
             messages=[{"role": "user", "content": prompt}],
         )
         return resp.choices[0].message.content or ""
+
+
+def _http_client(sdk: Any, verify: bool | str) -> dict[str, Any]:
+    """http_client kwarg for an SDK constructor; empty when verify is the default."""
+    if verify is True:
+        return {}
+    if isinstance(verify, str):
+        where = "capath" if os.path.isdir(verify) else "cafile"
+        verify = ssl.create_default_context(**{where: verify})
+    return {"http_client": sdk.DefaultHttpxClient(verify=verify)}
 
 
 @dataclass

@@ -182,29 +182,27 @@ jurors = [
   Thinking counts toward it.
 - If Claude refuses, the vote is recorded in `result.failed` and the decision goes to review.
 
-## Custom HTTP client
+## Self-signed certificates and custom clients
 
-To change how a juror connects, such as a proxy or a self-signed certificate, pass your own SDK
-client. The juror's `base_url` and `api_key` are then ignored, so set them on the client.
-One client can serve several jurors on the same server.
+For a server with a self-signed or internal certificate, point `verify` at the certificate.
+`verify=False` turns certificate checks off entirely. It works, but then anyone on the network
+path can read the API key and evidence, so prefer the certificate. `Claude` takes the same option.
+
+```python
+Juror("my-model", base_url="https://my-server:8000/v1", verify="/path/to/ca.pem")
+Juror("my-model", base_url="https://my-server:8000/v1", verify=False)
+```
+
+For anything else, such as a proxy, pass your own SDK client with `client=`. The juror's
+`base_url`, `api_key` and `verify` are then ignored, so set them on the client. Use the SDK's
+`DefaultHttpxClient` rather than a plain `httpx.Client`, so its timeouts and limits are kept.
 
 ```python
 from openai import OpenAI, DefaultHttpxClient
-from modeljury import Juror
 
-client = OpenAI(
-    base_url="https://my-server:8000/v1",
-    api_key="...",
-    http_client=DefaultHttpxClient(verify="/path/to/ca.pem"),  # your server's certificate
-)
-jurors = [Juror("my-model", client=client)]
+client = OpenAI(base_url="...", api_key="...", http_client=DefaultHttpxClient(proxy="http://proxy:3128"))
+Juror("my-model", client=client)
 ```
-
-`verify=False` turns certificate checks off entirely. It works, but then anyone on the network
-path can read the API key and evidence, so prefer pointing `verify` at the certificate.
-For Claude, do the same with `Anthropic(http_client=anthropic.DefaultHttpxClient(...))` and
-`Claude("claude-...", client=...)`. Use the SDK's `DefaultHttpxClient` rather than a plain
-`httpx.Client`, so the SDK's timeouts and connection limits are kept.
 
 ## Custom prompt
 

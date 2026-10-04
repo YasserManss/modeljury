@@ -246,3 +246,21 @@ def test_no_hint_when_listing_fails_or_model_exists():
 
 def test_no_hint_for_other_errors():
     assert "available" not in failed_error("x", FakeClient(RuntimeError("timeout")))
+
+
+def test_verify_builds_http_client_only_when_changed(monkeypatch, tmp_path):
+    import openai
+
+    seen = []
+
+    class Capture:
+        def __init__(self, **kwargs):
+            seen.append(kwargs)
+            raise RuntimeError("stop before any request")
+
+    monkeypatch.setattr(openai, "OpenAI", Capture)
+    run(Juror("a", base_url="http://x"), Juror("b", base_url="http://x", verify=False),
+        Juror("c", base_url="http://x", verify=str(tmp_path)))  # a CA directory
+    by_url = sorted(seen, key=lambda k: "http_client" in k)
+    assert "http_client" not in by_url[0]
+    assert all(isinstance(k["http_client"], openai.DefaultHttpxClient) for k in by_url[1:])
