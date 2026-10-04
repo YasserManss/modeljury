@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import warnings
@@ -188,8 +189,27 @@ def _poll(
     try:
         raw = juror.ask(prompt, timeout, params)
     except Exception as e:  # one bad juror must not sink the panel
-        return Vote(juror=name, choice=None, error=f"{type(e).__name__}: {e}")
+        error = f"{type(e).__name__}: {e}{_model_hint(juror, e)}"
+        return Vote(juror=name, choice=None, error=error)
     return parse_vote(name, raw, options)
+
+
+def _model_hint(juror: Juror, e: Exception) -> str:
+    """On a model-not-found error, list the endpoint's models. Best effort; "" if unknown."""
+    status = getattr(e, "status_code", None)
+    if status != 404 and not (status == 400 and "model" in str(e).lower()):
+        return ""
+    try:
+        ids = sorted(m.id for m in juror.client.models.list(timeout=10))
+    except Exception:
+        return ""
+    if not ids or juror.model in ids:
+        return ""
+    close = difflib.get_close_matches(juror.model, ids, n=3, cutoff=0.3)
+    if len(ids) <= 20:
+        return f"; available models: {', '.join(ids)}"
+    hint = f"; did you mean {', '.join(close)}?" if close else ""
+    return f"{hint} ({len(ids)} models available)"
 
 
 def _last_json_object(raw: str) -> dict | None:

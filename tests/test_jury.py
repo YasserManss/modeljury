@@ -203,3 +203,46 @@ def test_duplicate_names_are_numbered_without_mutating_jurors():
     r = run(a, b, juror("gpt", vote("legit")))
     assert [v.juror for v in r.votes] == ["llama", "llama#2", "gpt"]
     assert b.name == "llama"
+
+
+class NotFound(Exception):
+    status_code = 404
+
+
+def model_client(models, list_error=None):
+    """A FakeClient whose create() 404s and whose models.list() returns models."""
+    client = FakeClient(NotFound("model does not exist"))
+
+    def list_models(**kwargs):
+        if list_error:
+            raise list_error
+        return [SimpleNamespace(id=m) for m in models]
+
+    client.models = SimpleNamespace(list=list_models)
+    return client
+
+
+def failed_error(model, client):
+    r = run(Juror(model, client=client), juror("b", vote("legit")))
+    return r.failed[0].error
+
+
+def test_unknown_model_lists_available_models():
+    err = failed_error("qwen-typo", model_client(["Qwen3-27B", "llama3.1"]))
+    assert err.endswith("; available models: Qwen3-27B, llama3.1")
+
+
+def test_unknown_model_suggests_close_matches_on_long_lists():
+    models = [f"vendor/model-{i}" for i in range(50)] + ["meta-llama/llama-3.1-70b-instruct"]
+    err = failed_error("meta-llama/llama-3.1-70b", model_client(models))
+    assert "did you mean meta-llama/llama-3.1-70b-instruct" in err
+    assert "(51 models available)" in err
+
+
+def test_no_hint_when_listing_fails_or_model_exists():
+    assert "available" not in failed_error("x", model_client([], list_error=NotFound("bad base_url")))
+    assert "available" not in failed_error("llama3.1", model_client(["llama3.1"]))
+
+
+def test_no_hint_for_other_errors():
+    assert "available" not in failed_error("x", FakeClient(RuntimeError("timeout")))

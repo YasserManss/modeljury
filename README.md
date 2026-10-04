@@ -227,6 +227,7 @@ A single juror can't dissent, so its decisions only go to review when it fails. 
 
 ## Notes
 
+- If a model name is wrong, the juror's error in `result.failed` lists the models the endpoint serves, or suggests the closest names when there are more than 20.
 - Jurors with the same name (e.g. `llama3.1` on two endpoints) are recorded as `llama3.1`, `llama3.1#2`, ...
 - `timeout` applies to each attempt. The OpenAI and Anthropic SDKs retry failed calls twice, so one juror can take up to three times `timeout`.
 
