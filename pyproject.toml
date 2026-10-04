@@ -1,0 +1,20 @@
+[project]
+name = "modeljury"
+version = "0.1.0"
+description = "Ask several models instead of one. Ship when they agree, send to a human when they don't."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["openai>=1.0"]
+
+[project.optional-dependencies]
+claude = [
+    "anthropic>=1.11.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
