@@ -9,6 +9,7 @@ Re-running with the same --out skips decisions already recorded, so a long run c
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -42,7 +43,8 @@ def main() -> None:
             todo = [it for it in items if (setup_name, it["id"]) not in done]
             start = time.time()
             with ThreadPoolExecutor(args.workers) as pool, args.out.open("a") as f:
-                for item, record in zip(todo, pool.map(lambda it: _decide(setup, it), todo)):
+                decide = functools.partial(_decide, setup)  # bind now, not at call time
+                for item, record in zip(todo, pool.map(decide, todo)):
                     record.update(
                         setup=setup_name, id=item["id"], dataset=name, label=item["label"],
                         human_agreement=item["human_agreement"], n_options=len(item["options"]),

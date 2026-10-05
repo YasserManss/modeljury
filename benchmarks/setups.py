@@ -40,15 +40,17 @@ class Recorder:
     def _openai(self, **kwargs):
         start = time.perf_counter()
         resp = self._client.chat.completions.create(**kwargs)
-        u = resp.usage
-        self.calls.append((time.perf_counter() - start, u.prompt_tokens, u.completion_tokens))
+        u = resp.usage  # occasionally missing from OpenRouter responses
+        self.calls.append((time.perf_counter() - start, getattr(u, "prompt_tokens", 0),
+                           getattr(u, "completion_tokens", 0)))
         return resp
 
     def _anthropic(self, **kwargs):
         start = time.perf_counter()
         resp = self._client.messages.create(**kwargs)
         u = resp.usage
-        self.calls.append((time.perf_counter() - start, u.input_tokens, u.output_tokens))
+        self.calls.append((time.perf_counter() - start, getattr(u, "input_tokens", 0),
+                           getattr(u, "output_tokens", 0)))
         return resp
 
 
@@ -62,7 +64,7 @@ def _need(var: str) -> str:
 def _openai_client(base_url: str, api_key: str):
     from openai import OpenAI
 
-    return OpenAI(base_url=base_url, api_key=api_key, max_retries=2)
+    return OpenAI(base_url=base_url, api_key=api_key, max_retries=8)
 
 
 class Panel:
@@ -112,7 +114,8 @@ class Single:
         vote = parse_vote(j.model, raw, item["options"])
         lat, pin, pout = rec.calls[-1]
         return dict(pred=vote.choice, needs_review=None, confidence=vote.confidence,
-                    latency_s=lat, prompt_tokens=pin, completion_tokens=pout, error=vote.error)
+                    latency_s=lat, prompt_tokens=pin, completion_tokens=pout, error=vote.error,
+                    model=j.model)
 
 
 def _choice_question(item: dict) -> dict:
@@ -155,16 +158,15 @@ class Laya:
 
 
 class Jev:
-    """TypeSafe Jev through its SystemOne API. Not yet run: needs TYPESAFE_API_KEY."""
+    """TypeSafe Jev through the SystemOne API, either TypeSafe's own or OpenRouter's copy of it."""
 
-    URL = "https://api.typesafe.ai/v1/systemone"
-
-    def __init__(self):
-        self.key = _need("TYPESAFE_API_KEY")
+    def __init__(self, url="https://api.typesafe.ai/v1/systemone", key_var="TYPESAFE_API_KEY",
+                 model="jev-latest"):
+        self.URL, self.key, self.model = url, _need(key_var), model
 
     def decide(self, item: dict) -> dict:
         body = json.dumps({
-            "state": item["evidence"], "model": "jev-latest", "questions": _choice_question(item),
+            "state": item["evidence"], "model": self.model, "questions": _choice_question(item),
         }).encode()
         for attempt in range(5):
             req = urllib.request.Request(self.URL, data=body, headers={
@@ -192,11 +194,20 @@ def _local_panel():
     return Panel(client, [(LOCAL_MODEL, {"temperature": 0})] + [(LOCAL_MODEL, {"temperature": 1.0})] * 4)
 
 
+# The fastest model from each of OpenAI, Google and Anthropic. GPT-6 Luna rejects temperature, so it's left out.
+MIXED_PANEL = [
+    ("openai/gpt-6-luna", {"temperature": None}),
+    ("google/gemini-3.5-flash-lite", {"temperature": 0}),
+    ("anthropic/claude-haiku-4.5", {"temperature": 0}),
+]
+
+
 def _mixed_panel():
-    """Different model families via OpenRouter. Set PANEL_MODELS to a comma-separated list."""
+    """Different model families via OpenRouter. PANEL_MODELS (comma-separated) overrides the default."""
     client = _openai_client(OPENROUTER_URL, _need("OPENROUTER_API_KEY"))
-    models = [m.strip() for m in _need("PANEL_MODELS").split(",")]
-    return Panel(client, [(m, {"temperature": 0}) for m in models])
+    if os.environ.get("PANEL_MODELS"):
+        return Panel(client, [(m.strip(), {"temperature": 0}) for m in os.environ["PANEL_MODELS"].split(",")])
+    return Panel(client, MIXED_PANEL)
 
 
 FREE_PANEL = [
@@ -212,6 +223,21 @@ def _free_panel():
     return Panel(client, [(m, {"temperature": 0}) for m in FREE_PANEL])
 
 
+# Open-weight models from three companies, reasoning off so the panel stays fast.
+NO_REASONING = {"temperature": 0, "extra_body": {"reasoning": {"enabled": False}}}
+OPEN_PANEL = [
+    ("qwen/qwen3.6-35b-a3b", NO_REASONING),
+    ("google/gemma-4-26b-a4b-it", NO_REASONING),
+    ("nvidia/nemotron-3.5-lightning", NO_REASONING),
+]
+
+
+def _open_panel():
+    """Open-weight models via OpenRouter."""
+    client = _openai_client(OPENROUTER_URL, _need("OPENROUTER_API_KEY"))
+    return Panel(client, OPEN_PANEL)
+
+
 def _large_claude():
     import anthropic
 
@@ -222,11 +248,23 @@ def _large_claude():
     return Single(Claude(model, client=client, params={"max_tokens": 4096}))
 
 
+def _large_opus():
+    """Claude Opus 5.5 alone, via OpenRouter. It rejects temperature and always thinks."""
+    client = _openai_client(OPENROUTER_URL, _need("OPENROUTER_API_KEY"))
+    return Single(Juror("anthropic/claude-opus-5.5", client=client,
+                        params={"temperature": None, "max_tokens": 16000}))
+
+
 SETUPS = {
     "panel-local": _local_panel,
     "panel-mixed": _mixed_panel,
     "panel-free": _free_panel,
+    "panel-open": _open_panel,
     "laya": Laya,
     "jev": Jev,
+    "jev-openrouter": lambda: Jev(
+        "https://openrouter.ai/api/v1/systemone", "OPENROUTER_API_KEY", "typesafe/jev-1.13"
+    ),
     "large-claude": _large_claude,
+    "large-opus": _large_opus,
 }

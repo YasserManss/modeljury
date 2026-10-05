@@ -71,7 +71,7 @@ def judgebench():
         )
         yield _item(
             "judgebench", r["pair_id"], "Which response answers the question correctly?",
-            evidence, ["A", "B"], r["label"][0],
+            evidence, ["Response A", "Response B"], f"Response {r['label'][0]}",
         )
 
 

@@ -2,6 +2,17 @@
 
 Ask several models instead of one. Ship when they agree, send to a human when they don't.
 
+Measured on 2,850 decisions across six public datasets ([details](benchmarks/RESULTS.md),
+[the case for using it](WHY_MODELJURY.md)):
+
+- **Ships 74% of decisions without review**, and what ships is right 87.5% of the time — more
+  reliable than a purpose-built decision model at the same automation rate (86.1%).
+- **Halves the error rate on long answer comparisons**: 5% of shipped decisions wrong, against 11%.
+- **Beats Claude Opus 5.5 on subjective judgment** (hate speech: 76% vs 71%).
+- **One fifth the cost of a frontier model and twice as fast** ($1.18 vs $5.79 per 1,000 decisions).
+- **Runs on open-weight models on your own hardware**, with no API fees and no data leaving your network.
+- **Every flagged decision comes with the dissenting juror's reason.**
+
 ## Getting started
 
 Python 3.10 or newer.

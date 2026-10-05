@@ -14,7 +14,6 @@ For each dataset and setup:
   human AUROC     on datasets with several human labels: how well the flag (or low
                   confidence) picks out items where humans disagreed; 0.5 is chance
 
-Panel records also yield a "<panel>/juror1" row: the first juror alone.
 """
 
 from __future__ import annotations
@@ -31,7 +30,19 @@ PRICES = {
     "panel-free": (0, 0),
     "laya": (0, 0),
     "jev": (0.042, 0),
+    "jev-openrouter": (0.042, 0),
     "large-claude": (4.0, 20.0),
+}
+# OpenRouter models, priced per juror call. List price, $ per million tokens (input, output), 2026-10-05.
+MODEL_PRICES = {
+    "openai/gpt-6-luna": (0.10, 0.50),
+    "google/gemini-3.5-flash-lite": (0.30, 2.50),
+    "anthropic/claude-haiku-4.5": (1.00, 5.00),
+    "anthropic/claude-opus-5.5": (4.0, 20.0),
+    "qwen/qwen3.6-35b-a3b": (0.15, 1.00),
+    "google/gemma-4-26b-a4b-it": (0.09, 0.30),
+    "nvidia/nemotron-3.5-lightning": (0.06, 0.16),
+    "openai/gpt-6.1-sol": (2.0, 10.0),
 }
 AMBIGUOUS_BELOW = 0.8  # human agreement under this counts as "humans disagreed"
 
@@ -43,7 +54,6 @@ def main() -> None:
     args = p.parse_args()
 
     records = [json.loads(line) for line in args.results.read_text().splitlines()]
-    records += [r for rec in records if rec.get("votes") for r in [_first_juror(rec)]]
     by = defaultdict(list)
     for r in records:
         by[(r["dataset"], r["setup"])].append(r)
@@ -95,13 +105,8 @@ def _row(setup: str, rs: list[dict], ref_cov: float | None, human: bool) -> str:
     lats = sorted(r["latency_s"] for r in rs if r.get("latency_s") is not None)
     lat = f"{_q(lats, 0.5):.2f} / {_q(lats, 0.95):.2f}" if lats else "–"
 
-    pin, pout = PRICES.get(setup.split("/")[0], (None, None))
-    if setup.endswith("/juror1") or pin is None:
-        cost = "?" if pin is None else "–"
-    else:
-        tokens_in = statistics.mean(r["prompt_tokens"] for r in rs)
-        tokens_out = statistics.mean(r["completion_tokens"] for r in rs)
-        cost = f"{(tokens_in * pin + tokens_out * pout) / 1e6 * 1000:.2f}"
+    per_decision = [_cost(setup, r) for r in rs]
+    cost = "?" if None in per_decision else f"{statistics.mean(per_decision) * 1000:.2f}"
 
     row = f"| {setup} | {n} | {_pct(acc)} | {cov} | {shipped} | {recall} | {matched} | {lat} | {cost} |"
     if human:
@@ -109,14 +114,20 @@ def _row(setup: str, rs: list[dict], ref_cov: float | None, human: bool) -> str:
     return row
 
 
-def _first_juror(rec: dict) -> dict:
-    v = rec["votes"][0]
-    return dict(
-        setup=rec["setup"] + "/juror1", id=rec["id"], dataset=rec["dataset"], label=rec["label"],
-        human_agreement=rec["human_agreement"], pred=v["choice"], needs_review=None,
-        confidence=v["confidence"], latency_s=v["latency_s"],
-        prompt_tokens=v["prompt_tokens"], completion_tokens=v["completion_tokens"],
-    )
+def _cost(setup: str, r: dict) -> float | None:
+    """Dollars for one decision, or None if a price is unknown."""
+    if r.get("votes"):  # a panel: price each juror's call by its model
+        total = 0.0
+        for v in r["votes"]:
+            price = MODEL_PRICES.get(v["juror"].split("#")[0]) or PRICES.get(setup)
+            if price is None:
+                return None
+            total += (v["prompt_tokens"] * price[0] + v["completion_tokens"] * price[1]) / 1e6
+        return total
+    price = MODEL_PRICES.get(r.get("model", "")) or PRICES.get(setup.split("/")[0])
+    if price is None:
+        return None
+    return (r["prompt_tokens"] * price[0] + r["completion_tokens"] * price[1]) / 1e6
 
 
 def _coverage(rs: list[dict]) -> float | None:

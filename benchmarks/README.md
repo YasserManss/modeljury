@@ -25,6 +25,9 @@ Setups (see `setups.py`): `laya`, `panel-free`, `panel-mixed`, `large-claude`, `
 Paid setups read `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` or `TYPESAFE_API_KEY`.
 Rerunning with the same `--out` skips decisions already recorded.
 
+Once the datasets are downloaded, set `HF_DATASETS_OFFLINE=1 HF_HUB_OFFLINE=1`. Otherwise the
+`datasets` library checks Hugging Face for updates on every run, and that check can hang.
+
 ## Datasets
 
 | Name | Source | License |
