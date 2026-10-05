@@ -264,3 +264,15 @@ def test_verify_builds_http_client_only_when_changed(monkeypatch, tmp_path):
     by_url = sorted(seen, key=lambda k: "http_client" in k)
     assert "http_client" not in by_url[0]
     assert all(isinstance(k["http_client"], openai.DefaultHttpxClient) for k in by_url[1:])
+
+
+def test_parse_salvages_choice_from_broken_json():
+    raw = '{"choice": "no", "confidence": 0.95, "reason": The evidence says five combined, not five each.}'
+    v = parse_vote("nemotron", raw, ["yes", "no"])
+    assert v.choice == "no" and v.confidence == 0.95
+    assert v.reason == "The evidence says five combined, not five each."
+
+
+def test_salvage_still_rejects_choices_outside_options():
+    v = parse_vote("a", '{"choice": "maybe", reason: oops}', OPTIONS)
+    assert v.choice is None and "not in options" in v.error

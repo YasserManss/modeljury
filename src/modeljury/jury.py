@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import re
 import ssl
 import warnings
 from collections import Counter
@@ -240,9 +241,27 @@ def _last_json_object(raw: str) -> dict | None:
     return found
 
 
+def _salvage_fields(raw: str) -> dict:
+    """Read the fields from JSON-like replies that don't parse, e.g. an unquoted reason.
+
+    Small models often get the choice right and break the JSON afterwards.
+    """
+    choices = re.findall(r'"choice"\s*:\s*"([^"]*)"', raw)
+    if not choices:
+        return {}
+    data = {"choice": choices[-1]}
+    if m := re.findall(r'"confidence"\s*:\s*([0-9.]+)', raw):
+        data["confidence"] = m[-1]
+    if m := re.findall(r'"reason"\s*:\s*"?(.*?)"?\s*}?\s*$', raw, re.DOTALL):
+        data["reason"] = m[-1]
+    return data
+
+
 def parse_vote(juror: str, raw: str, options: Sequence[str]) -> Vote:
     data = _last_json_object(raw)
     if not isinstance(data, dict):
+        data = _salvage_fields(raw)
+    if not data:
         return Vote(juror=juror, choice=None, error=f"unparseable reply: {raw[:200]!r}")
 
     choice = str(data.get("choice", "")).strip()
