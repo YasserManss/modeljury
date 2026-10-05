@@ -1,6 +1,6 @@
 [project]
 name = "modeljury"
-version = "0.2.0"
+version = "0.2.1"
 description = "Ask several models instead of one. Ship when they agree, send to a human when they don't."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,6 +34,10 @@ claude = [
 
 [dependency-groups]
 dev = ["pytest>=8"]
+
+[tool.hatch.build.targets.sdist]
+# Ship only the library, its tests and docs; benchmarks and their results stay in the repo.
+only-include = ["src", "tests", "README.md", "LICENSE", "pyproject.toml"]
 
 [build-system]
 requires = ["hatchling"]
