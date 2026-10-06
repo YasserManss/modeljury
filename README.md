@@ -3,15 +3,25 @@
 Ask several models instead of one. Ship when they agree, send to a human when they don't.
 
 Measured on 2,850 decisions across six public datasets ([details](benchmarks/RESULTS.md),
-[the case for using it](WHY_MODELJURY.md)):
+[the case for using it](WHY_MODELJURY.md)), with a panel of five cheap open-weight models
+(DeepSeek V4.1 Flash, GLM 5.3 Flash, MiMo V2.6 Flash, Qwen3.8 Flash, Gemma 4 26B-A4B):
 
-- **Ships 74% of decisions without review**, and what ships is right 87.5% of the time — more
-  reliable than a purpose-built decision model at the same automation rate (86.1%).
-- **Halves the error rate on long answer comparisons**: 5% of shipped decisions wrong, against 11%.
-- **Beats Claude Opus 5.5 on subjective judgment** (hate speech: 76% vs 71%).
-- **One fifth the cost of a frontier model and twice as fast** ($1.18 vs $5.79 per 1,000 decisions).
-- **Runs on open-weight models on your own hardware**, with no API fees and no data leaving your network.
-- **Every flagged decision comes with the dissenting juror's reason.**
+- **Ships 71% of decisions without review, and 89.6% of what ships is right.** Claude Opus 5.5,
+  shipping its most confident answers at the same rate, is right 90.5% of the time, at about ten
+  times the cost ($5.79 against $0.61 per 1,000 decisions).
+- **Beats each of its own models used alone.** Every panel tested shipped more reliably than any
+  of its jurors ranked by its own confidence.
+- **Every flagged decision comes with the dissenting juror's reason**, so a reviewer knows where to look.
+- **Beats Claude Opus 5.5 on subjective judgment**: hate speech, 76% against 71% (p = 0.02).
+- **No single point of failure.** A juror that refuses or errors is outvoted and the decision is flagged, not lost.
+
+Where it loses: Opus is more accurate overall (83.1% against 80.1%) and much better on long answer
+comparisons and 77-way intent classification. Every number, including the losses, is in
+[RESULTS.md](benchmarks/RESULTS.md), and `benchmarks/stats.py` regenerates them.
+
+Asking several models and voting isn't new; see [Verga et al., 2024, "Replacing Judges with
+Juries"](https://arxiv.org/abs/2404.18796). modeljury is the practical part: a small library that
+turns disagreement into a review flag with reasons, and a benchmark of how well that flag works.
 
 ## Getting started
 
@@ -225,7 +235,7 @@ jurors = [
 
 - Credentials come from `ANTHROPIC_API_KEY` or an `ant auth login` profile, unless you pass `api_key=`.
 - Panel-wide kwargs are OpenAI parameters, so Claude jurors don't receive them. Put Messages API
-  options in `params` instead. Current Claude models reject `temperature`, so none is sent.
+  options in `params` instead. No `temperature` is sent, because the newest Claude models reject it.
 - `max_tokens` defaults to 16000. Set it lower with `params={"max_tokens": ...}` if you need a cost cap.
   Thinking counts toward it.
 - If Claude refuses, the vote is recorded in `result.failed` and the decision goes to review.
