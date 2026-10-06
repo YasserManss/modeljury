@@ -125,7 +125,14 @@ def convene(
     """Poll every juror in parallel and return the verdict with the full record.
 
     needs_review is True unless every juror returned the same valid choice.
-    timeout applies to each attempt; the SDKs retry failed calls twice.
+
+    timeout is the request timeout for each juror call. It bounds waiting for a
+    reply, not the length of one: a juror that keeps emitting tokens is never
+    idle, so the clock never runs out (measured at 1,915 s against a 300 s
+    timeout). It also applies per attempt, and the SDKs retry failed calls
+    twice. convene() waits for every juror and has no deadline of its own, so
+    it returns when the slowest juror does. To bound how long a juror can take,
+    and what it can cost, set max_tokens.
 
     prompt is a str.format template with {question}, {evidence} and {options};
     double any literal braces. Extra keyword arguments (temperature=0.3,

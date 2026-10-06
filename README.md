@@ -172,6 +172,43 @@ convene(..., temperature=0.3, max_tokens=200, jurors=[
 ])
 ```
 
+## Timeouts
+
+`timeout` is the request timeout handed to each juror's API call. It is worth being precise about
+what that does and does not cover.
+
+```python
+convene(question, evidence, options, jurors, timeout=60)
+```
+
+**It bounds waiting, not generating.** The timeout governs the HTTP request, which in practice means
+how long the client will wait without hearing anything back. A juror that keeps steadily emitting
+tokens is not idle, so the clock never runs out. In our benchmark a juror ran for **1,915 seconds
+against a 300-second timeout** and returned a successful reply of 65,536 tokens. Two others produced
+131,072 tokens each. None of them timed out, because none of them went quiet.
+
+**It is per attempt, not per juror.** The OpenAI and Anthropic SDKs retry failed calls, twice by
+default, so a juror that keeps erroring can take several times `timeout` before giving up. Raising
+`max_retries` on your own client multiplies that further.
+
+**`convene()` has no deadline of its own.** It polls jurors in parallel and waits for all of them, so
+it returns when the slowest juror does. Panel latency is slowest-juror latency, and one slow juror
+holds up the decision no matter how fast the others were.
+
+**To actually bound a juror, set `max_tokens`.** It is the only option here that limits how much work
+a model can do, and therefore how long it can take and what it can cost:
+
+```python
+convene(..., max_tokens=512, jurors=[...])
+```
+
+Pick it to fit the reply you want, not the model's limit. The default prompt asks for a choice, a
+confidence and a one-line reason, which is a few dozen tokens; reasoning models need considerably
+more before they reach the JSON. Set it too low and a juror is cut off mid-reply, its vote fails, and
+the decision is flagged — safe, but you have paid for an answer you did not get. modeljury sets no
+default `max_tokens` for OpenAI-compatible jurors, so without one a juror may generate up to its
+context limit. Claude jurors default to 16000.
+
 ## Claude
 
 Claude uses the native Anthropic Messages API. Install the extra with `pip install modeljury[claude]`.
@@ -264,7 +301,7 @@ A single juror can't dissent, so its decisions only go to review when it fails. 
 
 - If a model name is wrong, the juror's error in `result.failed` lists the models the endpoint serves, or suggests the closest names when there are more than 20.
 - Jurors with the same name (e.g. `llama3.1` on two endpoints) are recorded as `llama3.1`, `llama3.1#2`, ...
-- `timeout` applies to each attempt. The OpenAI and Anthropic SDKs retry failed calls twice, so one juror can take up to three times `timeout`.
+- `timeout` bounds each request, not how long a juror can take. See [Timeouts](#timeouts).
 
 ## Develop
 
