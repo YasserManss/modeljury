@@ -93,10 +93,11 @@ openjury, shipping 71% of decisions (2,012 of 2,850):
 | Banking77 | 92% | 92% | 98% |
 | ChaosNLI | **81%** | 73% | 81% |
 | Measuring Hate Speech | **84%** | 80% | 78% |
-| **Pooled** | **89.6%** | 86.6% | 92.0% |
+| **Pooled** | **89.6%** | 87.1% | 90.5% |
 
 Differences in pooled shipped accuracy, 95% bootstrap intervals:
-openjury minus Jev **+1.0 to +5.0 points**; openjury minus Opus −4.3 to −0.7 points.
+openjury minus Jev **+1.3 to +3.5 points**; openjury minus Opus −2.3 to 0.0 points.
+openjury ships within about two points of Opus, at about a tenth of the cost.
 
 Closed panel, shipping 74% of decisions:
 
@@ -105,16 +106,36 @@ Closed panel, shipping 74% of decisions:
 | BoolQ | 94% | 96% | 96% |
 | VitaminC | 90% | 88% | 91% |
 | JudgeBench | **95%** | 89% | 100% |
-| Banking77 | 89% | 89% | 98% |
+| Banking77 | 89% | 89% | 97% |
 | ChaosNLI | **77%** | 71% | 80% |
 | Measuring Hate Speech | **81%** | 80% | 77% |
-| **Pooled** | **87.5%** | 86.1% | 90.2% |
+| **Pooled** | **87.5%** | 86.1% | 90.1% |
 
 Differences in pooled shipped accuracy, 95% bootstrap intervals:
-closed panel minus Jev **+0.4 to +2.7 points**; closed panel minus Opus −3.6 to −1.5 points.
+closed panel minus Jev **+0.3 to +2.7 points**; closed panel minus Opus −3.8 to −1.5 points.
 
-Open panel, shipping 66% of decisions: pooled 87.2%, against Jev 88.3% (−2.1 to +0.5) and
-Opus 91.1% (−5.5 to −2.9). It wins ChaosNLI (78% vs 74%) and VitaminC (92% vs 91%) against Jev.
+Open panel, shipping 66% of decisions: pooled 87.2%, against Jev 88.2% (−2.3 to +0.4) and
+Opus 91.2% (−5.7 to −2.8). It wins ChaosNLI (78% vs 74%) and VitaminC (92% vs 90%) against Jev.
+
+**Does the panel beat its own best juror?** This is the question a panel has to answer: why not
+call the best of its models alone and ship its most confident answers? Each juror's votes are in
+the panel's records, so each one is ranked by its own stated confidence and ships as many
+decisions per dataset as its panel did:
+
+| Panel | Panel ships correctly | Best juror alone | Panel minus best juror (95% bootstrap) |
+|---|---|---|---|
+| openjury | **89.6%** | 88.9% (GLM 5.3 Flash) | 0.0 to +2.0 points |
+| Closed panel | **87.5%** | 85.0% (GPT-6 Luna) | +1.2 to +3.5 points |
+| Open panel | **87.2%** | 85.0% (Qwen 3.6 35B-A3B) | +0.9 to +3.7 points |
+
+Every panel beats every one of its jurors. The margin is clear for the closed and open panels and
+thin for openjury, whose best juror is nearly as good alone.
+
+**Reproducing.** `python stats.py results/full.jsonl` prints the paired tests, pooled shipped
+accuracy against every rival and juror, and the bootstrap intervals (seed 0, 2,000 resamples).
+Matched accuracy depends on how ties in confidence are broken: across every possible ordering,
+Opus at openjury's coverage ranges from 90.0% to 91.7%, and at the closed panel's from 89.4% to
+90.8%. The figures above break ties by record order.
 
 **The two panels head to head.** They ship different shares, so comparing their pooled numbers
 directly favours openjury, which ships less. Ranking both by juror agreement and holding coverage
@@ -123,7 +144,9 @@ equal:
 | Coverage | openjury ships correctly | Closed panel ships correctly |
 |---|---|---|
 | 70.6% (openjury's own) | **89.4%** | 87.5% |
-| 73.8% (closed panel's own) | **88.6%** | 87.5% |
+| 73.8% (closed panel's own) | **88.5%** | 87.5% |
+
+Ties in agreement at the cutoff are broken at random; the figures are the expected values.
 
 Per 1,000 decisions shipped without review: openjury 104 wrong, closed panel 125, open panel 128.
 
@@ -170,7 +193,13 @@ starts looping can generate to a million-token context. p99 latency is 45 s and 
 decisions took over 60 s, so the tail is narrow but extreme. **Any production panel should set a
 hard `max_tokens` per juror.**
 
-No rate limits in any run. Total cost of the full run: about $22.43, of which openjury was $1.73.
+No rate limits in any run. Total cost of the full run: about $22.34, of which openjury was $1.73.
+
+**Prices.** On 2026-10-06 every OpenRouter price above still matched the live list except DeepSeek
+V4.1 Flash, now $0.0033 / $1.32 per million tokens; at that price openjury costs $0.50 per 1,000
+decisions instead of $0.61. Jev is priced on input tokens only, as `report.py` records it; it also
+returned about 176 output tokens per decision, and pricing those like its input would raise its cost
+from $0.03 to $0.04 per 1,000.
 
 ## Pilots (50 items per dataset)
 

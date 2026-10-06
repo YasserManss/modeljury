@@ -19,6 +19,7 @@ VIRTUAL_ENV=.venv uv pip install -r requirements.txt --index-strategy unsafe-bes
 ```sh
 USE_TF=0 .venv/bin/python run.py --setups laya --n 50 --out results/pilot.jsonl
 .venv/bin/python report.py results/pilot.jsonl
+.venv/bin/python stats.py results/full.jsonl   # paired tests, shipped accuracy, bootstrap intervals
 ```
 
 Setups (see `setups.py`): `openjury`, `panel-mixed`, `panel-open`, `panel-free`, `panel-local`,
