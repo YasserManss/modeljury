@@ -238,6 +238,24 @@ def _open_panel():
     return Panel(client, OPEN_PANEL)
 
 
+# Five cheap models, one from each of five families, reasoning off so the panel stays fast.
+OPENJURY = [
+    ("deepseek/deepseek-v4.1-flash", NO_REASONING),
+    # glm-5.3-flash rejects reasoning: {enabled: false}, so ask for the least of it instead
+    ("z-ai/glm-5.3-flash", {"temperature": 0, "extra_body": {"reasoning": {"effort": "minimal"}}}),
+    ("xiaomi/mimo-v2.6-flash", NO_REASONING),
+    ("qwen/qwen3.8-flash", NO_REASONING),
+    ("google/gemma-4-26b-a4b-it", NO_REASONING),
+]
+
+
+def _openjury():
+    """Five cheap models from five companies, via OpenRouter."""
+    client = _openai_client(OPENROUTER_URL, _need("OPENROUTER_API_KEY"))
+    return Panel(client, OPENJURY)
+
+
+
 def _large_claude():
     import anthropic
 
@@ -260,6 +278,7 @@ SETUPS = {
     "panel-mixed": _mixed_panel,
     "panel-free": _free_panel,
     "panel-open": _open_panel,
+    "openjury": _openjury,
     "laya": Laya,
     "jev": Jev,
     "jev-openrouter": lambda: Jev(

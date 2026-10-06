@@ -21,7 +21,8 @@ USE_TF=0 .venv/bin/python run.py --setups laya --n 50 --out results/pilot.jsonl
 .venv/bin/python report.py results/pilot.jsonl
 ```
 
-Setups (see `setups.py`): `laya`, `panel-free`, `panel-mixed`, `large-claude`, `jev`, `panel-local`.
+Setups (see `setups.py`): `openjury`, `panel-mixed`, `panel-open`, `panel-free`, `panel-local`,
+`jev`, `jev-openrouter`, `laya`, `large-opus`, `large-claude`.
 Paid setups read `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` or `TYPESAFE_API_KEY`.
 Rerunning with the same `--out` skips decisions already recorded.
 

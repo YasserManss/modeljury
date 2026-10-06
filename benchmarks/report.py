@@ -43,6 +43,10 @@ MODEL_PRICES = {
     "google/gemma-4-26b-a4b-it": (0.09, 0.30),
     "nvidia/nemotron-3.5-lightning": (0.06, 0.16),
     "openai/gpt-6.1-sol": (2.0, 10.0),
+    "deepseek/deepseek-v4.1-flash": (0.30, 1.20),
+    "z-ai/glm-5.3-flash": (0.15, 0.50),
+    "xiaomi/mimo-v2.6-flash": (0.14, 0.28),
+    "qwen/qwen3.8-flash": (0.15, 0.47),
 }
 AMBIGUOUS_BELOW = 0.8  # human agreement under this counts as "humans disagreed"
 
