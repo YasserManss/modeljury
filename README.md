@@ -2,8 +2,8 @@
 
 Ask several models instead of one. Ship when they agree, send to a human when they don't.
 
-Measured on 2,850 decisions across six public datasets ([details](benchmarks/RESULTS.md),
-[the case for using it](WHY_MODELJURY.md)), with a panel of five cheap open-weight models
+Measured on 2,850 decisions across six public datasets ([details](https://github.com/YasserManss/modeljury/blob/main/benchmarks/RESULTS.md),
+[the case for using it](https://github.com/YasserManss/modeljury/blob/main/WHY_MODELJURY.md)), with a panel of five cheap open-weight models
 (DeepSeek V4.1 Flash, GLM 5.3 Flash, MiMo V2.6 Flash, Qwen3.8 Flash, Gemma 4 26B-A4B):
 
 - **Ships 71% of decisions without review, and 89.6% of what ships is right.** Claude Opus 5.5,
@@ -23,7 +23,7 @@ about a third of comments are hateful, Opus is more accurate.
 
 This panel was added after the other setups had run and is scored on the same items, so its
 figures are not yet confirmed on a fresh sample. Every number, including the losses, is in
-[RESULTS.md](benchmarks/RESULTS.md); `benchmarks/report.py` and `benchmarks/stats.py` regenerate the
+[RESULTS.md](https://github.com/YasserManss/modeljury/blob/main/benchmarks/RESULTS.md); `benchmarks/report.py` and `benchmarks/stats.py` regenerate the
 full-run figures from the raw records.
 
 Asking several models and voting isn't new; see [Verga et al., 2024, "Replacing Judges with
