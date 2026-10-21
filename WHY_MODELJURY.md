@@ -56,23 +56,15 @@ On long answer comparisons, **the error rate of what ships is under half Jev's**
 That is the shape of real review work — comparing a document to a policy, a response to a rubric,
 a change to a standard. (Opus, at its most confident, shipped no errors here.)
 
-### 2. It beats each of its own models
+### 2. It ships more reliably than its own models
 
 The obvious alternative to a panel is its best model alone, shipping its most confident answers.
-Every panel tested beat every one of its jurors at the same automation rate. For openjury the margin
-over its best juror is small (89.6% against 88.9%); for the closed panel it is clear (87.5% against
-85.0%, +1.2 to +3.5 points).
+Every panel tested shipped more correct decisions than each of its jurors at the same automation
+rate. For the closed panel the margin over its best juror is clear (87.5% against 85.0%, +1.2 to
++3.5 points). For openjury it is within noise: 89.6% against 88.9% for GLM 5.3 Flash, with a 95%
+interval of −0.0 to +2.0 points.
 
-### 3. It beats a frontier model on subjective judgment
-
-On hate speech, where annotators themselves disagree, openjury was right **76%** of the time against
-**71%** for Claude Opus 5.5 — 50 items where only the panel was right, against 28 the other way
-(p = 0.02). What it shipped was right 84% of the time, against Opus's 78%.
-
-One model has one set of blind spots. Five models from five companies do not share all of them.
-Nothing scored well here — 76% is still 24% wrong — but the panel was wrong less often.
-
-### 4. Open weights, no lock-in
+### 3. Open weights, no lock-in
 
 Every openjury juror publishes its weights, so the panel can run inside your network, where neither
 Jev nor Claude Opus 5.5 can. Be realistic about the hardware: openjury includes sparse models of
@@ -83,14 +75,14 @@ went through OpenRouter; a self-hosted benchmark is still to do.
 Any OpenAI-compatible endpoint works, plus Claude natively. If a provider raises prices, deprecates
 a model, or has an outage, you change a string — you do not rebuild your pipeline.
 
-### 5. Every flagged decision comes with reasons
+### 4. Every flagged decision comes with reasons
 
 Jev and Opus return a number. modeljury returns the dissenting juror, its answer, and its one-line
 reason. A reviewer starts from "the shipping address changed after purchase", not from "0.62".
 
 That is also the audit trail: for every decision, who voted what and why.
 
-### 6. No single point of failure
+### 5. No single point of failure
 
 In the full run, Claude Opus 5.5 returned nothing on one item — its safety classifier declined an
 exam question about viral virulence. A single model that refuses returns nothing at all.
@@ -108,8 +100,14 @@ Stated plainly, because anyone evaluating this will check:
   long answers (95% vs 83%).
 - **It is not the cheapest or fastest.** Jev costs $0.03 per 1,000 decisions and answers in 0.55 s.
   openjury costs about 20 times more and takes about 4 s typically, 17 s at p95.
-- **It does not make AI accurate on subjective questions.** On hate speech every setup scored
-  71–76%. Panels can agree and still be wrong; a human stays essential there.
+- **It does not judge subjective questions better than a frontier model; it draws the line
+  elsewhere.** On hate speech every setup scored 71–76%. openjury's 76% against Claude Opus 5.5's
+  71% comes from flagging more comments: it catches 80% of hateful ones to Opus's 62%, with more
+  false alarms (29% against 20%). The benchmark samples half hateful comments; where fewer than
+  about a third are hateful, Opus would be more accurate. Panels can agree and still be wrong; a
+  human stays essential there.
+- **Its headline numbers are not yet confirmed on fresh data.** openjury was added after the other
+  setups had run and is scored on the same 2,850 items. A rerun on a new sample is still to do.
 - **Panels wait for their slowest juror.** In the benchmark the slowest openjury decision took
   1,915 s, because a juror with no `max_tokens` set kept generating. Set `max_tokens` on every
   juror to bound that.
@@ -119,14 +117,18 @@ It is a cheap, reliable way to know which decisions you can trust — and it tel
 
 ## The economics
 
-Against Jev at the same automation rate, openjury costs **$0.58 more per 1,000 decisions** and ships
-about **17 fewer wrong decisions per 1,000 decisions** (210 errors shipped against 260, out of 2,850).
+Against Jev at the same automation rate, openjury costs **$0.57 more per 1,000 decisions** and ships
+about **18 fewer wrong decisions per 1,000 decisions** (210 errors shipped against 260, out of 2,850).
 
 It pays for itself if a single wrong decision costs you more than **about 3 cents**. (The closed
 panel, at $1.18 per 1,000, breaks even at about 11 cents.)
 
 A wrongly approved refund, a missed policy violation, a bad merge, a compliance miss: all cost more
 than 3 cents.
+
+Against Claude Opus 5.5 the trade runs the other way. At the same automation rate Opus ships about
+6 fewer wrong decisions per 1,000 (192 against 210) for $5.18 more, so it is the better buy once a
+wrong decision costs more than **about 80 cents**.
 
 ## How to evaluate it
 
@@ -144,5 +146,5 @@ and nothing to lock into for the pilot.
 
 Everything is in [benchmarks/](benchmarks/): the datasets (all public), the setups, the runner, and
 the raw per-decision records. `python report.py results/full.jsonl` prints the per-dataset tables,
-and `python stats.py results/full.jsonl` the paired tests, shipped-accuracy comparisons and
-bootstrap intervals.
+and `python stats.py results/full.jsonl` the rest: cost and latency, the paired tests, failures,
+shipped-accuracy comparisons with bootstrap intervals, the economics above, and hate speech by class.

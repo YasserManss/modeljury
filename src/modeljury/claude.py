@@ -13,9 +13,10 @@ class Claude(Juror):
     """A Claude model, e.g. Claude("claude-opus-5-5").
 
     Credentials come from ANTHROPIC_API_KEY or an `ant auth login` profile
-    unless api_key is given. Panel-wide kwargs are OpenAI parameters, so they
-    are not sent here; put Messages API options in params instead, e.g.
-    params={"output_config": {"effort": "low"}}. Requires modeljury[claude].
+    unless api_key is given. Of the panel-wide kwargs only max_tokens is sent
+    here (default 16000); the rest are OpenAI parameters. Put Messages API
+    options in params instead, e.g. params={"output_config": {"effort": "low"}}.
+    Requires modeljury[claude].
     """
 
     def ask(self, prompt: str, timeout: float, params: dict[str, Any]) -> str:
@@ -27,7 +28,7 @@ class Claude(Juror):
                 **{k: v for k, v in kwargs.items() if v is not None},
                 **_http_client(anthropic, self.verify),
             )
-        merged = {"max_tokens": 16000, "timeout": timeout, **self.params}
+        merged = {"max_tokens": params.get("max_tokens") or 16000, "timeout": timeout, **self.params}
         resp = self.client.messages.create(
             **{k: v for k, v in merged.items() if v is not None},
             model=self.model,

@@ -7,7 +7,9 @@ Laya only ran in the pilot (50 items per dataset) and is marked partial.
 
 **Setup.** 500 items per dataset, 350 for JudgeBench, which has only that many usable pairs; seed 0;
 the same items for every setup. Raw records: [`results/full.jsonl`](results/full.jsonl).
-Full table: [`results/full_report.md`](results/full_report.md).
+Full table: [`results/full_report.md`](results/full_report.md). openjury was added on 2026-10-06,
+after the other four setups had run, and is scored on the same items, so its figures are not yet
+confirmed on a fresh sample (see [Still to run](#still-to-run)).
 
 | Name | What it is |
 |---|---|
@@ -69,9 +71,27 @@ Its advantage is in the flag, below, not in the verdict.
 | ChaosNLI | 500 | 69% | 69% | 68% | 65% | 66% |
 | Measuring Hate Speech | 500 | 71% | **76%** | **76%** | 75% | 73% |
 
-All three panels beat Opus on hate speech, where annotators themselves disagree; the closed panel's
-margin there is 46 items to 23 (p = 0.008). openjury is the only setup to beat Opus on BoolQ. Opus
-wins JudgeBench and Banking77 decisively.
+All three panels score higher than Opus on hate speech, but that is a difference in where each
+draws the line, not better judgment, and it depends on the sample:
+
+| Setup | Catches hateful | Clears the rest | Accuracy (half hateful) | If 10% were hateful |
+|---|---|---|---|---|
+| openjury | 80% | 71% | 76% | 72% |
+| Closed panel | 76% | 76% | 76% | 76% |
+| Open panel | 73% | 73% | 73% | 73% |
+| Jev | 91% | 58% | 75% | 62% |
+| Opus | 62% | 80% | 71% | 78% |
+
+Opus calls fewer comments hateful. Of the 50 items only openjury got right, 47 are hateful comments
+Opus called clean, and on a typical one only two-thirds of annotators said hateful. The sample is
+half hateful by design (see the pilot caveats); weighting each setup's rates by a different mix,
+Opus is more accurate than openjury wherever under 34% of comments are hateful, than the closed
+panel under 24%, and than the open panel under 41%. The p-values are also uncorrected: openjury's
+margin over Opus (50 items to 28, p = 0.017) does not survive a correction for six datasets
+(p < 0.0083), and the closed panel's (46 to 23, p = 0.008) only just does.
+
+openjury's 93% against Opus's 92% on BoolQ is a tie (13 items to 12). Opus wins JudgeBench and
+Banking77 decisively.
 
 ### The flag: how reliable is what ships without review?
 
@@ -128,14 +148,17 @@ decisions per dataset as its panel did:
 | Closed panel | **87.5%** | 85.0% (GPT-6 Luna) | +1.2 to +3.5 points |
 | Open panel | **87.2%** | 85.0% (Qwen 3.6 35B-A3B) | +0.9 to +3.7 points |
 
-Every panel beats every one of its jurors. The margin is clear for the closed and open panels and
-thin for openjury, whose best juror is nearly as good alone.
+Every panel ships more correct decisions than each of its jurors. The margin is clear for the
+closed and open panels; for openjury against GLM 5.3 Flash the interval reaches zero, so that one
+is not established.
 
 **Reproducing.** `python stats.py results/full.jsonl` prints the paired tests, pooled shipped
-accuracy against every rival and juror, and the bootstrap intervals (seed 0, 2,000 resamples).
-Matched accuracy depends on how ties in confidence are broken: across every possible ordering,
-Opus at openjury's coverage ranges from 90.0% to 91.7%, and at the closed panel's from 89.4% to
-90.8%. The figures above break ties by record order.
+accuracy against every rival and juror, and the bootstrap intervals (seed 0, 2,000 resamples). It
+also prints every other full-run figure here that `report.py` doesn't. Matched accuracy depends on
+how ties in confidence are broken: across every possible ordering, Opus at openjury's coverage
+ranges from 90.0% to 91.7%, and at the closed panel's from 89.4% to 90.8%. The figures above break
+ties by record order; breaking them at random instead moves none of them by more than half a point,
+and every panel still beats each of its jurors.
 
 **The two panels head to head.** They ship different shares, so comparing their pooled numbers
 directly favours openjury, which ships less. Ranking both by juror agreement and holding coverage
@@ -184,22 +207,30 @@ absorbed this way. All five of MiMo's were its own safety filter declining hate-
 ("the request was rejected because it was considered high risk") — the same failure that cost Opus a
 decision outright, except the panel still returned one.
 
+Four of the others (Qwen twice on JudgeBench, DeepSeek twice on ChaosNLI) were recorded as
+`choice not in options: ''`: the last JSON object in the reply had no choice. The parser used in
+this run lost a vote that way whenever another JSON object followed it. That is fixed, but the raw
+replies weren't kept, so whether these four held real votes can't be checked.
+
 **Runaway generations.** Three of openjury's 2,850 decisions had a juror generate until it hit its
 context limit — 131,072 tokens twice (GLM, DeepSeek) and 65,536 once (Gemma) — on long JudgeBench
 items, despite reasoning being off. Those three cases cost $0.25, which is 14% of openjury's total
 spend, and produced the 1,915-second worst-case latency. Without them the panel costs $0.52 per
 1,000 instead of $0.61. The cause is that no `max_tokens` is set for these jurors, so a model that
-starts looping can generate to a million-token context. p99 latency is 45 s and only 22 of 2,850
-decisions took over 60 s, so the tail is narrow but extreme. **Any production panel should set a
-hard `max_tokens` per juror.**
+starts looping can generate to a million-token context. The 300-second timeout never fired: the
+calls don't stream, and OpenRouter kept each connection alive while the model worked, so the client
+was never left waiting in silence (see Timeouts in the README). p99 latency is 45 s and only 22 of
+2,850 decisions took over 60 s, so the tail is narrow but extreme. **Any production panel should set
+a hard `max_tokens` per juror.**
 
 No rate limits in any run. Total cost of the full run: about $22.34, of which openjury was $1.73.
 
 **Prices.** On 2026-10-06 every OpenRouter price above still matched the live list except DeepSeek
 V4.1 Flash, now $0.0033 / $1.32 per million tokens; at that price openjury costs $0.50 per 1,000
-decisions instead of $0.61. Jev is priced on input tokens only, as `report.py` records it; it also
-returned about 176 output tokens per decision, and pricing those like its input would raise its cost
-from $0.03 to $0.04 per 1,000.
+decisions instead of $0.61 (set it in `report.py`'s `MODEL_PRICES` and rerun `stats.py` to check).
+Jev is priced on input tokens only, as `report.py` records it; it also returned about 176 output
+tokens per decision, and pricing those like its input would raise its cost from $0.03 to $0.04 per
+1,000.
 
 ## Pilots (50 items per dataset)
 
@@ -380,6 +411,7 @@ exactly the closed panel's coverage.
 
 | Setup | Needs |
 |---|---|
+| openjury and Opus on a fresh sample (seed 1), to confirm the headline figures | About $18 |
 | Laya, full run on a GPU | A free GPU |
 | A second large model (GPT-6.1 Sol) | About $15 |
 | Self-hosted open panel, for latency and throughput | A GPU server |
