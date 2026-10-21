@@ -9,15 +9,22 @@ Measured on 2,850 decisions across six public datasets ([details](benchmarks/RES
 - **Ships 71% of decisions without review, and 89.6% of what ships is right.** Claude Opus 5.5,
   shipping its most confident answers at the same rate, is right 90.5% of the time, at about ten
   times the cost ($5.79 against $0.61 per 1,000 decisions).
-- **Beats each of its own models used alone.** Every panel tested shipped more reliably than any
-  of its jurors ranked by its own confidence.
+- **Ships more reliably than its own models used alone**, each ranked by its own confidence. The
+  margin is clear for the two other panels tested, but for this one it is within noise of its best
+  juror, GLM 5.3 Flash (89.6% against 88.9%).
 - **Every flagged decision comes with the dissenting juror's reason**, so a reviewer knows where to look.
-- **Beats Claude Opus 5.5 on subjective judgment**: hate speech, 76% against 71% (p = 0.02).
 - **No single point of failure.** A juror that refuses or errors is outvoted and the decision is flagged, not lost.
 
 Where it loses: Opus is more accurate overall (83.1% against 80.1%) and much better on long answer
-comparisons and 77-way intent classification. Every number, including the losses, is in
-[RESULTS.md](benchmarks/RESULTS.md), and `benchmarks/stats.py` regenerates them.
+comparisons and 77-way intent classification. On hate speech the panel scores higher (76% against
+71%) only because it flags more: it catches 80% of hateful comments to Opus's 62%, with more false
+alarms (29% against 20%). That wins on the benchmark's half-hateful sample, but where fewer than
+about a third of comments are hateful, Opus is more accurate.
+
+This panel was added after the other setups had run and is scored on the same items, so its
+figures are not yet confirmed on a fresh sample. Every number, including the losses, is in
+[RESULTS.md](benchmarks/RESULTS.md); `benchmarks/report.py` and `benchmarks/stats.py` regenerate the
+full-run figures from the raw records.
 
 Asking several models and voting isn't new; see [Verga et al., 2024, "Replacing Judges with
 Juries"](https://arxiv.org/abs/2404.18796). modeljury is the practical part: a small library that
@@ -53,7 +60,10 @@ for juror, choice, reason in result.dissent:
 ```
 
 For hosted models, set `OPENAI_API_KEY` (and `OPENAI_BASE_URL` for non-OpenAI providers) or
-pass `api_key=` and `base_url=` to each `Juror`. For Claude, set `ANTHROPIC_API_KEY`.
+pass `api_key=` and `base_url=` to each `Juror`. `OPENAI_API_KEY` is only sent to the endpoint it
+belongs to, `OPENAI_BASE_URL` or else OpenAI's, so a juror with any other `base_url` needs its own
+`api_key=`. Servers that don't check keys, like the Ollama one above, need none. For Claude, set
+`ANTHROPIC_API_KEY`.
 
 ## Usage
 
@@ -170,7 +180,8 @@ because a unanimous vote only means something if the jurors could have disagreed
 ## Model options
 
 Extra keyword arguments to `convene()` go to every juror's `chat.completions.create` call.
-A juror's own `params` override them. `temperature` defaults to `0`.
+A juror's own `params` override them. `temperature` defaults to `0`. Claude jurors take only
+`max_tokens` from them; see [Claude](#claude).
 
 ```python
 convene(..., temperature=0.3, max_tokens=200, jurors=[
@@ -191,22 +202,29 @@ what that does and does not cover.
 convene(question, evidence, options, jurors, timeout=60)
 ```
 
-**It bounds waiting, not generating.** The timeout governs the HTTP request, which in practice means
-how long the client will wait without hearing anything back. A juror that keeps steadily emitting
-tokens is not idle, so the clock never runs out. In our benchmark a juror ran for **1,915 seconds
-against a 300-second timeout** and returned a successful reply of 65,536 tokens. Two others produced
-131,072 tokens each. None of them timed out, because none of them went quiet.
+**It bounds silence, not work.** The clock restarts whenever bytes arrive, and modeljury's calls
+don't stream, so a juror's tokens reach the client only once its reply is complete. What happens to
+a slow juror depends on the server:
 
-**It is per attempt, not per juror.** The OpenAI and Anthropic SDKs retry failed calls, twice by
-default, so a juror that keeps erroring can take several times `timeout` before giving up. Raising
-`max_retries` on your own client multiplies that further.
+- **A server that sends nothing until the reply is done** times out after `timeout` seconds of work.
+  With the default of 60, a juror that needs longer is cut off, retried, and finally fails, so raise
+  `timeout` for slow hardware or long reasoning.
+- **A server that sends keep-alive bytes while it works** never goes quiet, so the clock never runs
+  out. That is what happened on OpenRouter in our benchmark: a juror ran for **1,915 seconds against
+  a 300-second timeout** and returned a successful reply of 65,536 tokens, and two others produced
+  131,072 tokens each.
+
+**It is per attempt, not per juror.** The OpenAI and Anthropic SDKs retry failed calls, timeouts
+included, twice by default, so a juror that keeps timing out is tried three times, taking more than
+three times `timeout`, before giving up. Raising `max_retries` on your own client multiplies that
+further.
 
 **`convene()` has no deadline of its own.** It polls jurors in parallel and waits for all of them, so
 it returns when the slowest juror does. Panel latency is slowest-juror latency, and one slow juror
 holds up the decision no matter how fast the others were.
 
 **To actually bound a juror, set `max_tokens`.** It is the only option here that limits how much work
-a model can do, and therefore how long it can take and what it can cost:
+a model can do on any server, and therefore how long it can take and what it can cost:
 
 ```python
 convene(..., max_tokens=512, jurors=[...])
@@ -217,7 +235,7 @@ confidence and a one-line reason, which is a few dozen tokens; reasoning models 
 more before they reach the JSON. Set it too low and a juror is cut off mid-reply, its vote fails, and
 the decision is flagged — safe, but you have paid for an answer you did not get. modeljury sets no
 default `max_tokens` for OpenAI-compatible jurors, so without one a juror may generate up to its
-context limit. Claude jurors default to 16000.
+context limit. Claude jurors default to 16000, and the panel's `max_tokens` applies to them too.
 
 ## Claude
 
@@ -234,10 +252,12 @@ jurors = [
 ```
 
 - Credentials come from `ANTHROPIC_API_KEY` or an `ant auth login` profile, unless you pass `api_key=`.
-- Panel-wide kwargs are OpenAI parameters, so Claude jurors don't receive them. Put Messages API
-  options in `params` instead. No `temperature` is sent, because the newest Claude models reject it.
-- `max_tokens` defaults to 16000. Set it lower with `params={"max_tokens": ...}` if you need a cost cap.
-  Thinking counts toward it.
+- Of the panel-wide kwargs, Claude jurors receive only `max_tokens`; the rest are OpenAI parameters.
+  Put Messages API options in `params` instead. No `temperature` is sent, because the newest Claude
+  models reject it.
+- `max_tokens` defaults to 16000. The panel's `max_tokens`, or the juror's own
+  `params={"max_tokens": ...}`, sets a lower cap. Thinking counts toward it, so a cap that thinking
+  uses up leaves no answer and the vote fails.
 - If Claude refuses, the vote is recorded in `result.failed` and the decision goes to review.
 
 ## Self-signed certificates and custom clients
@@ -311,7 +331,9 @@ A single juror can't dissent, so its decisions only go to review when it fails. 
 
 - If a model name is wrong, the juror's error in `result.failed` lists the models the endpoint serves, or suggests the closest names when there are more than 20.
 - Jurors with the same name (e.g. `llama3.1` on two endpoints) are recorded as `llama3.1`, `llama3.1#2`, ...
-- `timeout` bounds each request, not how long a juror can take. See [Timeouts](#timeouts).
+- Replies are matched to options ignoring case and surrounding spaces, so options must differ by more than that; `convene()` raises `ValueError` otherwise.
+- A reply's vote is the last JSON object with a `choice` in it, after any `<think>` block. A broken object after it wins, with its fields salvaged, because it is the later answer.
+- `timeout` limits how long a request can go without receiving data, per attempt; it is not a deadline for the juror. See [Timeouts](#timeouts).
 
 ## Develop
 

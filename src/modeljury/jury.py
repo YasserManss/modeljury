@@ -30,7 +30,10 @@ Reply with only a JSON object:
 class Juror:
     """A model behind any OpenAI-compatible chat completions endpoint.
 
-    base_url and api_key default to OPENAI_BASE_URL and OPENAI_API_KEY.
+    base_url defaults to OPENAI_BASE_URL. api_key defaults to OPENAI_API_KEY,
+    but only for the endpoint that key belongs to: OPENAI_BASE_URL, or OpenAI
+    itself when that is unset. A juror with any other base_url gets no key
+    unless you pass api_key.
     params are passed straight to chat.completions.create (temperature,
     max_tokens, reasoning_effort, extra_body, ...) and override the panel's.
     Set a param to None to leave it out, e.g. {"temperature": None} for
@@ -56,7 +59,7 @@ class Juror:
 
             self.client = openai.OpenAI(
                 base_url=self.base_url or os.environ.get("OPENAI_BASE_URL"),
-                api_key=self.api_key or os.environ.get("OPENAI_API_KEY", "none"),
+                api_key=self.api_key or _env_key(self.base_url) or "none",
                 **_http_client(openai, self.verify),
             )
         merged = {"temperature": 0, "timeout": timeout, **params, **self.params}
@@ -66,6 +69,14 @@ class Juror:
             messages=[{"role": "user", "content": prompt}],
         )
         return resp.choices[0].message.content or ""
+
+
+def _env_key(base_url: str | None) -> str | None:
+    """OPENAI_API_KEY, if base_url is the endpoint it belongs to: OPENAI_BASE_URL, or else OpenAI's."""
+    home = os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+    if base_url is None or base_url.rstrip("/") == home.rstrip("/"):
+        return os.environ.get("OPENAI_API_KEY")
+    return None
 
 
 def _http_client(sdk: Any, verify: bool | str) -> dict[str, Any]:
@@ -126,10 +137,12 @@ def convene(
 
     needs_review is True unless every juror returned the same valid choice.
 
-    timeout is the request timeout for each juror call. It bounds waiting for a
-    reply, not the length of one: a juror that keeps emitting tokens is never
-    idle, so the clock never runs out (measured at 1,915 s against a 300 s
-    timeout). It also applies per attempt, and the SDKs retry failed calls
+    timeout is the request timeout for each juror call, and its clock restarts
+    whenever bytes arrive. Calls don't stream, so a juror's tokens arrive only
+    when its reply is complete: a server that sends nothing until then times
+    out after timeout seconds of work, while one that sends keep-alive bytes
+    never does (on OpenRouter, measured at 1,915 s against a 300 s timeout).
+    It applies per attempt, and the SDKs retry failed calls, timeouts included,
     twice. convene() waits for every juror and has no deadline of its own, so
     it returns when the slowest juror does. To bound how long a juror can take,
     and what it can cost, set max_tokens.
@@ -138,10 +151,13 @@ def convene(
     double any literal braces. Extra keyword arguments (temperature=0.3,
     max_tokens=200, ...) go to every juror's chat.completions.create call;
     a Juror's own params override them. temperature defaults to 0. Claude jurors
-    (any "claude-..." string, or Claude(...)) skip panel kwargs; see Claude.
+    (any "claude-..." string, or Claude(...)) take only max_tokens from them;
+    see Claude.
     """
     if len(options) < 2:
         raise ValueError("need at least two options")
+    if len({o.strip().lower() for o in options}) < len(options):
+        raise ValueError("options must differ by more than case and surrounding spaces")
     if not jurors:
         raise ValueError("need at least one juror")
     if len(jurors) == 1:
@@ -212,7 +228,7 @@ def _poll(
     try:
         raw = juror.ask(prompt, timeout, params)
     except Exception as e:  # one bad juror must not sink the panel
-        error = f"{type(e).__name__}: {e}{_model_hint(juror, e)}"
+        error = f"{type(e).__name__}: {e}{_model_hint(juror, e)}{_key_hint(juror, e)}"
         return Vote(juror=name, choice=None, error=error)
     return parse_vote(name, raw, options)
 
@@ -235,17 +251,44 @@ def _model_hint(juror: Juror, e: Exception) -> str:
     return f"{hint} ({len(ids)} models available)"
 
 
-def _last_json_object(raw: str) -> dict | None:
-    """The last JSON object in raw, skipping prose, code fences and <think> blocks."""
+def _key_hint(juror: Juror, e: Exception) -> str:
+    """On a 401 from a juror's own base_url, say that OPENAI_API_KEY isn't sent there."""
+    if getattr(e, "status_code", None) != 401 or type(juror) is not Juror or juror.api_key:
+        return ""
+    if not os.environ.get("OPENAI_API_KEY") or _env_key(juror.base_url) is not None:
+        return ""
+    return "; OPENAI_API_KEY isn't sent to this base_url, so pass api_key="
+
+
+def _answer(raw: str) -> str:
+    """raw without its thinking: <think> blocks, or a reply cut off while still thinking."""
+    _, closed, after = raw.rpartition("</think>")  # some templates open the block in the prompt
+    if closed:
+        return after
+    return raw.split("<think>", 1)[0]  # an unclosed block never reached an answer
+
+
+def _last_vote(text: str) -> dict:
+    """The last JSON object with a "choice", skipping prose and code fences.
+
+    A later object that doesn't parse wins over it, salvaged, because it is the
+    later answer.
+    """
     decoder = json.JSONDecoder()
-    found, i = None, raw.find("{")
+    vote, broken, i = {}, None, text.find("{")
     while i != -1:
         try:
-            found, end = decoder.raw_decode(raw, i)
+            obj, end = decoder.raw_decode(text, i)
         except json.JSONDecodeError:
+            broken = i if broken is None else broken
             end = i + 1
-        i = raw.find("{", end)
-    return found
+        else:
+            if "choice" in obj:
+                vote, broken = obj, None
+        i = text.find("{", end)
+    if broken is not None:
+        return _salvage_fields(text[broken:]) or vote
+    return vote
 
 
 def _salvage_fields(raw: str) -> dict:
@@ -265,14 +308,12 @@ def _salvage_fields(raw: str) -> dict:
 
 
 def parse_vote(juror: str, raw: str, options: Sequence[str]) -> Vote:
-    data = _last_json_object(raw)
-    if not isinstance(data, dict):
-        data = _salvage_fields(raw)
-    if not data:
-        return Vote(juror=juror, choice=None, error=f"unparseable reply: {raw[:200]!r}")
+    data = _last_vote(_answer(raw))
+    if "choice" not in data:
+        return Vote(juror=juror, choice=None, error=f"no vote in reply: {_clip(raw)!r}")
 
-    choice = str(data.get("choice", "")).strip()
-    by_lower = {o.lower(): o for o in options}
+    choice = str(data["choice"]).strip()
+    by_lower = {o.strip().lower(): o for o in options}
     if choice.lower() not in by_lower:
         return Vote(juror=juror, choice=None, error=f"choice not in options: {choice!r}")
 
@@ -287,3 +328,8 @@ def parse_vote(juror: str, raw: str, options: Sequence[str]) -> Vote:
         confidence=confidence,
         reason=str(data.get("reason", "")).strip(),
     )
+
+
+def _clip(text: str, n: int = 200) -> str:
+    """text, or its start and end when longer than n; a missing answer is usually at the end."""
+    return text if len(text) <= n else f"{text[: n // 2]} ... {text[-n // 2 :]}"

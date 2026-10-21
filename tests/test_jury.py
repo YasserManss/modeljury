@@ -276,3 +276,92 @@ def test_parse_salvages_choice_from_broken_json():
 def test_salvage_still_rejects_choices_outside_options():
     v = parse_vote("a", '{"choice": "maybe", reason: oops}', OPTIONS)
     assert v.choice is None and "not in options" in v.error
+
+
+def test_parse_prefers_final_broken_vote_over_earlier_draft():
+    final = '{"choice": "legit", "confidence": 0.9, "reason": Address change was confirmed}'
+    for draft in ['<think>Draft: {"choice": "fraud", "confidence": 0.6, "reason": "new address"}. No.</think>\n',
+                  'Draft: {"choice": "fraud", "confidence": 0.6, "reason": "new address"}. On reflection:\n']:
+        v = parse_vote("a", draft + final, OPTIONS)
+        assert v.choice == "legit" and v.reason == "Address change was confirmed"
+
+
+def test_parse_never_takes_a_vote_from_thinking():
+    for raw in ['<think>Leaning {"choice": "fraud"} but the address',  # cut off mid-thought
+                '<think>Draft {"choice": "fraud"}? No.</think>It is legit.',
+                'Draft {"choice": "fraud"}? No.</think>It is legit.']:  # template opened the block
+        v = parse_vote("a", raw, OPTIONS)
+        assert v.choice is None and "no vote" in v.error
+
+
+def test_parse_keeps_vote_followed_by_other_json():
+    v = parse_vote("a", '{"choice": "legit", "confidence": 0.9, "reason": "ok"}\nOrder: {"id": 1182}', OPTIONS)
+    assert v.choice == "legit" and v.reason == "ok"
+
+
+def test_parse_salvages_broken_vote_around_nested_object():
+    v = parse_vote("a", '{"choice": "legit", "confidence": 0.9, "reason": Form said {"refund": true}}', OPTIONS)
+    assert v.choice == "legit" and v.reason == 'Form said {"refund": true}'
+
+
+def test_no_vote_error_shows_the_end_of_a_long_reply():
+    v = parse_vote("a", "x" * 500 + " so the answer is legit", OPTIONS)
+    assert v.choice is None and v.error.endswith("the answer is legit'")
+
+
+def test_options_must_differ_by_more_than_case():
+    import pytest
+
+    with pytest.raises(ValueError, match="differ"):
+        convene("?", "e", ["Yes", "yes "], [juror("a", vote("yes")), juror("b", vote("yes"))])
+
+
+def test_parse_matches_options_with_stray_spaces():
+    assert parse_vote("a", '{"choice": "legit"}', [" fraud", "legit "]).choice == "legit "
+
+
+def test_panel_max_tokens_reaches_claude_and_its_own_params_win():
+    from modeljury import Claude
+
+    a = Claude("claude-opus-5-5", client=FakeAnthropic(json.dumps(vote("legit"))))
+    b = Claude("claude-sonnet-5-5", client=FakeAnthropic(json.dumps(vote("legit"))), params={"max_tokens": 900})
+    run(a, b, max_tokens=300, temperature=0.3)
+    assert a.client.calls[0]["max_tokens"] == 300 and "temperature" not in a.client.calls[0]
+    assert b.client.calls[0]["max_tokens"] == 900
+
+
+def test_env_key_only_goes_to_its_own_endpoint(monkeypatch):
+    import openai
+
+    seen = {}
+
+    class Capture:
+        def __init__(self, **kwargs):
+            seen[kwargs["base_url"]] = kwargs["api_key"]
+            raise RuntimeError("stop before any request")
+
+    monkeypatch.setattr(openai, "OpenAI", Capture)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    run(Juror("a"), Juror("b", base_url="https://api.openai.com/v1/"),
+        Juror("c", base_url="http://localhost:11434/v1"), Juror("d", base_url="https://x/v1", api_key="k"))
+    assert seen == {None: "sk-env", "https://api.openai.com/v1/": "sk-env",
+                    "http://localhost:11434/v1": "none", "https://x/v1": "k"}
+
+    seen.clear()
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+    run(Juror("e"), Juror("f", base_url="https://api.openai.com/v1"))
+    assert seen == {"https://openrouter.ai/api/v1": "sk-env", "https://api.openai.com/v1": "none"}
+
+
+class Unauthorized(Exception):
+    status_code = 401
+
+
+def test_401_from_own_base_url_says_the_env_key_was_not_sent(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-env")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    own = Juror("m", base_url="https://other.example/v1", client=FakeClient(Unauthorized("no key")))
+    assert "pass api_key=" in run(own, juror("b", vote("legit"))).failed[0].error
+    default = Juror("m", client=FakeClient(Unauthorized("bad key")))
+    assert "api_key" not in run(default, juror("b", vote("legit"))).failed[0].error
